@@ -1,0 +1,174 @@
+import librosa
+import matplotlib.pylab as plt
+import numpy as np
+import torch
+import wandb
+from nemo.utils import logging
+
+try:
+    from pytorch_lightning.utilities import rank_zero_only
+except ModuleNotFoundError:
+    from functools import wraps
+
+    def rank_zero_only(fn):
+        @wraps(fn)
+        def wrapped_fn(*args, **kwargs):
+            logging.error(
+                f"Function {fn} requires lighting to be installed, but it was not found. Please install lightning first"
+            )
+            exit(1)
+
+
+def griffin_lim(magnitudes, n_iters=50, n_fft=1024):
+    """
+    Griffin-Lim algorithm to convert magnitude spectrograms to audio signals
+    """
+    phase = np.exp(2j * np.pi * np.random.rand(*magnitudes.shape))
+    complex_spec = magnitudes * phase
+    signal = librosa.istft(complex_spec)
+    if not np.isfinite(signal).all():
+        logging.warning("audio was not finite, skipping audio saving")
+        return np.array([0])
+
+    for _ in range(n_iters):
+        _, phase = librosa.magphase(librosa.stft(signal, n_fft=n_fft))
+        complex_spec = magnitudes * phase
+        signal = librosa.istft(complex_spec)
+    return signal
+
+
+def plot_alignment_to_numpy(alignment, info=None):
+    fig, ax = plt.subplots(figsize=(6, 4))
+    im = ax.imshow(alignment, aspect="auto", origin="lower", interpolation="none")
+    fig.colorbar(im, ax=ax)
+    xlabel = "Decoder timestep"
+    if info is not None:
+        xlabel += "\n\n" + info
+    plt.xlabel(xlabel)
+    plt.ylabel("Encoder timestep")
+    plt.tight_layout()
+
+    fig.canvas.draw()
+    data = save_figure_to_numpy(fig)
+    plt.close()
+    return data
+
+
+def plot_spectrogram_to_numpy(spectrogram):
+    spectrogram = spectrogram.astype(np.float32)
+    fig, ax = plt.subplots(figsize=(12, 3))
+    im = ax.imshow(spectrogram, aspect="auto", origin="lower", interpolation="none")
+    plt.colorbar(im, ax=ax)
+    plt.xlabel("Frames")
+    plt.ylabel("Channels")
+    plt.tight_layout()
+
+    fig.canvas.draw()
+    data = save_figure_to_numpy(fig)
+    plt.close()
+    return data
+
+
+def plot_gate_outputs_to_numpy(gate_targets, gate_outputs):
+    fig, ax = plt.subplots(figsize=(12, 3))
+    ax.scatter(
+        range(len(gate_targets)),
+        gate_targets,
+        alpha=0.5,
+        color="green",
+        marker="+",
+        s=1,
+        label="target",
+    )
+    ax.scatter(
+        range(len(gate_outputs)),
+        gate_outputs,
+        alpha=0.5,
+        color="red",
+        marker=".",
+        s=1,
+        label="predicted",
+    )
+
+    plt.xlabel("Frames (Green target, Red predicted)")
+    plt.ylabel("Gate State")
+    plt.tight_layout()
+
+    fig.canvas.draw()
+    data = save_figure_to_numpy(fig)
+    plt.close()
+    return data
+
+
+def save_figure_to_numpy(fig):
+    # save it to a numpy array.
+    data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep="")
+    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    return data
+
+
+@rank_zero_only
+def tacotron2_log_to_wandb_func(
+    logger,
+    tensors,
+    step,
+    tag="train",
+    log_images=False,
+    log_images_freq=1,
+    add_audio=True,
+    griffin_lim_mag_scale=1024,
+    griffin_lim_power=1.2,
+    sr=22050,
+    n_fft=1024,
+    n_mels=80,
+):
+    _, spec_target, mel_postnet, gate, gate_target, alignments = tensors
+    if log_images and step % log_images_freq == 0:
+        logger.log(
+            {
+                "Alignment": wandb.Image(
+                    plot_alignment_to_numpy(alignments[0].data.cpu().numpy().T), caption=f"{tag}_alignment"
+                ),
+                "Mel target": wandb.Image(
+                    plot_spectrogram_to_numpy(spec_target[0].data.cpu().numpy()), caption=f"{tag}_mel_target"
+                ),
+                "Mel predicted": wandb.Image(
+                    plot_spectrogram_to_numpy(mel_postnet[0].data.cpu().numpy()), caption=f"{tag}_gate"
+                ),
+                "Gate": wandb.Image(
+                    plot_gate_outputs_to_numpy(
+                        gate_target[0].data.cpu().numpy(),
+                        torch.sigmoid(gate[0]).data.cpu().numpy(),
+                    ),
+                    caption=f"{tag}_gate",
+                ),
+            },
+            step=step,
+        )
+        if add_audio:
+            filterbank = librosa.filters.mel(sr=sr, n_fft=n_fft, n_mels=n_mels)
+            log_mel = mel_postnet[0].data.cpu().numpy().T
+            mel = np.exp(log_mel)
+            magnitude = np.dot(mel, filterbank) * griffin_lim_mag_scale
+            predicted_audio = griffin_lim(magnitude.T ** griffin_lim_power, n_fft=n_fft)
+
+            log_mel = spec_target[0].data.cpu().numpy().T
+            mel = np.exp(log_mel)
+            magnitude = np.dot(mel, filterbank) * griffin_lim_mag_scale
+            target_audio = griffin_lim(magnitude.T ** griffin_lim_power, n_fft=n_fft)
+
+            logger.log(
+                {
+                    "Predicted audio": wandb.Audio(
+                        predicted_audio / max(np.abs(predicted_audio)),
+                        caption=f"audio_{tag}_predicted",
+                        sample_rate=sr,
+                    ),
+                    "Target audio": wandb.Audio(
+                        target_audio / max(np.abs(target_audio)),
+                        caption=f"audio_{tag}_target",
+                        sample_rate=sr,
+                    ),
+                },
+                step=step,
+            )
