@@ -5,9 +5,9 @@ from nemo.core.classes.common import typecheck
 from nemo.core.neural_types.elements import AudioSignal, EmbeddedTextType, LabelsType, LengthsType, MelSpectrogramType
 from nemo.core.neural_types.neural_type import NeuralType
 from omegaconf import DictConfig
-from pytorch_lightning.loggers import LoggerCollection, WandbLogger
+from pytorch_lightning.loggers import LoggerCollection, TensorBoardLogger
 
-from src.utils.helpers import tacotron2_log_to_wandb_func
+from src.utils.helpers import tacotron2_log_to_tb_func
 
 
 class Tacotron2Multispeaker(Tacotron2Model):
@@ -123,16 +123,16 @@ class Tacotron2Multispeaker(Tacotron2Model):
 
     def validation_epoch_end(self, outputs):
         if self.logger is not None and self.logger.experiment is not None:
-            wandb_logger = self.logger.experiment
+            tb_logger = self.logger.experiment
             if isinstance(self.logger, LoggerCollection):
                 for logger in self.logger:
-                    if isinstance(logger, WandbLogger):
-                        wandb_logger = logger.experiment
+                    if isinstance(logger, TensorBoardLogger):
+                        tb_logger = logger.experiment
                         break
 
             if self.global_step != 0:
-                tacotron2_log_to_wandb_func(
-                    wandb_logger,
+                tacotron2_log_to_tb_func(
+                    tb_logger,
                     outputs[0].values(),
                     self.global_step,
                     tag="val",

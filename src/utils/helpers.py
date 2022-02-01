@@ -172,3 +172,63 @@ def tacotron2_log_to_wandb_func(
                 },
                 step=step,
             )
+
+
+@rank_zero_only
+def tacotron2_log_to_tb_func(
+    swriter,
+    tensors,
+    step,
+    tag="train",
+    log_images=False,
+    log_images_freq=1,
+    add_audio=True,
+    griffin_lim_mag_scale=1024,
+    griffin_lim_power=1.2,
+    sr=22050,
+    n_fft=1024,
+    n_mels=80,
+    fmax=8000,
+):
+    _, spec_target, mel_postnet, gate, gate_target, alignments = tensors
+    if log_images and step % log_images_freq == 0:
+        swriter.add_image(
+            f"{tag}_alignment",
+            plot_alignment_to_numpy(alignments[0].data.cpu().numpy().T),
+            step,
+            dataformats="HWC",
+        )
+        swriter.add_image(
+            f"{tag}_mel_target",
+            plot_spectrogram_to_numpy(spec_target[0].data.cpu().numpy()),
+            step,
+            dataformats="HWC",
+        )
+        swriter.add_image(
+            f"{tag}_mel_predicted",
+            plot_spectrogram_to_numpy(mel_postnet[0].data.cpu().numpy()),
+            step,
+            dataformats="HWC",
+        )
+        swriter.add_image(
+            f"{tag}_gate",
+            plot_gate_outputs_to_numpy(
+                gate_target[0].data.cpu().numpy(),
+                torch.sigmoid(gate[0]).data.cpu().numpy(),
+            ),
+            step,
+            dataformats="HWC",
+        )
+        if add_audio:
+            filterbank = librosa.filters.mel(sr=sr, n_fft=n_fft, n_mels=n_mels, fmax=fmax)
+            log_mel = mel_postnet[0].data.cpu().numpy().T
+            mel = np.exp(log_mel)
+            magnitude = np.dot(mel, filterbank) * griffin_lim_mag_scale
+            audio = griffin_lim(magnitude.T ** griffin_lim_power, n_fft=n_fft)
+            swriter.add_audio(f"audio/{tag}_predicted", audio / max(np.abs(audio)), step, sample_rate=sr)
+
+            log_mel = spec_target[0].data.cpu().numpy().T
+            mel = np.exp(log_mel)
+            magnitude = np.dot(mel, filterbank) * griffin_lim_mag_scale
+            audio = griffin_lim(magnitude.T ** griffin_lim_power, n_fft=n_fft)
+            swriter.add_audio(f"audio/{tag}_target", audio / max(np.abs(audio)), step, sample_rate=sr)
