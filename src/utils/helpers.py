@@ -188,7 +188,6 @@ def tacotron2_log_to_tb_func(
     sr=22050,
     n_fft=1024,
     n_mels=80,
-    fmax=8000,
 ):
     _, spec_target, mel_postnet, gate, gate_target, alignments = tensors
     if log_images and step % log_images_freq == 0:
@@ -220,7 +219,7 @@ def tacotron2_log_to_tb_func(
             dataformats="HWC",
         )
         if add_audio:
-            filterbank = librosa.filters.mel(sr=sr, n_fft=n_fft, n_mels=n_mels, fmax=fmax)
+            filterbank = librosa.filters.mel(sr=sr, n_fft=n_fft, n_mels=n_mels)
             log_mel = mel_postnet[0].data.cpu().numpy().T
             mel = np.exp(log_mel)
             magnitude = np.dot(mel, filterbank) * griffin_lim_mag_scale
