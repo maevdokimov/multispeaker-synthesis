@@ -12,8 +12,12 @@ train_dataset: ???
 validation_datasets: ???
 pretrained_table_path: ???
 
+log_val_sample_idx: null
+
 model:
   labels: ${labels}
+  log_val_sample_idx: ${log_val_sample_idx}
+
   train_ds:
     dataset:
       # _target_: "nemo.collections.asr.data.audio_to_text.AudioToCharDataset"
