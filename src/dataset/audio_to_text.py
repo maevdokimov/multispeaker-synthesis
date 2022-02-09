@@ -1,9 +1,8 @@
 from typing import Callable, Dict, List, Optional, Union
 
 import torch
-from nemo.collections.asr.data.audio_to_text import ASRManifestProcessor
 from nemo.collections.asr.parts.preprocessing.features import WaveformFeaturizer
-from nemo.collections.common.parts.preprocessing import parsers
+from nemo.collections.common.parts.preprocessing import collections, parsers
 from nemo.core.classes import Dataset
 from nemo.core.neural_types import *
 
@@ -92,6 +91,65 @@ def _speech_collate_fn(batch, pad_id, has_speaker_id):
         speakers = torch.tensor(speakers, dtype=torch.int32)
         sample_ids = torch.tensor(sample_ids, dtype=torch.int32)
         return audio_signal, audio_lengths, tokens, tokens_lengths, speakers, sample_ids
+
+
+class ASRManifestProcessor:
+    """
+    Class that processes a manifest json file containing paths to audio files, transcripts, and durations (in seconds).
+    Each new line is a different sample. Example below:
+    {"audio_filepath": "/path/to/audio.wav", "text_filepath": "/path/to/audio.txt", "duration": 23.147}
+    ...
+    {"audio_filepath": "/path/to/audio.wav", "text": "the transcription", "offset": 301.75, "duration": 0.82, "utt":
+    "utterance_id", "ctm_utt": "en_4156", "side": "A"}
+    Args:
+        manifest_filepath: Path to manifest json as described above. Can be comma-separated paths.
+        parser: Str for a language specific preprocessor or a callable.
+        max_duration: If audio exceeds this length, do not include in dataset.
+        min_duration: If audio is less than this length, do not include in dataset.
+        max_utts: Limit number of utterances.
+        bos_id: Id of beginning of sequence symbol to append if not None.
+        eos_id: Id of end of sequence symbol to append if not None.
+        pad_id: Id of pad symbol. Defaults to 0.
+    """
+
+    def __init__(
+        self,
+        manifest_filepath: str,
+        parser: Union[str, Callable],
+        max_duration: Optional[float] = None,
+        min_duration: Optional[float] = None,
+        max_utts: int = 0,
+        bos_id: Optional[int] = None,
+        eos_id: Optional[int] = None,
+        pad_id: int = 0,
+    ):
+        self.parser = parser
+
+        self.collection = collections.ASRAudioText(
+            manifests_files=manifest_filepath,
+            parser=parser,
+            min_duration=min_duration,
+            max_duration=max_duration,
+            max_number=max_utts,
+        )
+
+        self.eos_id = eos_id
+        self.bos_id = bos_id
+        self.pad_id = pad_id
+
+    def process_text(self, index) -> (List[int], int):
+        sample = self.collection[index]
+
+        t, tl = sample.text_tokens, len(sample.text_tokens)
+
+        if self.bos_id is not None:
+            t = [self.bos_id] + t
+            tl += 1
+        if self.eos_id is not None:
+            t = t + [self.eos_id]
+            tl += 1
+
+        return t, tl
 
 
 class _AudioTextDataset(Dataset):
