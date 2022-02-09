@@ -29,6 +29,7 @@ class Tacotron2Model(Tacotron2Model):
                     sr=self.cfg.preprocessor.sample_rate,
                     n_fft=self.cfg.preprocessor.n_fft,
                     n_mels=self.cfg.preprocessor.nfilt,
+                    sample_idx=self.cfg.log_val_sample_idx or 0,
                 )
 
         avg_loss = torch.stack([x["val_loss"] for x in outputs]).mean()  # This reduces across batches, not workers!

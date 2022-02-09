@@ -121,24 +121,25 @@ def tacotron2_log_to_wandb_func(
     sr=22050,
     n_fft=1024,
     n_mels=80,
+    sample_idx=0,
 ):
     _, spec_target, mel_postnet, gate, gate_target, alignments = tensors
     if log_images and step % log_images_freq == 0:
         logger.log(
             {
                 "Alignment": wandb.Image(
-                    plot_alignment_to_numpy(alignments[0].data.cpu().numpy().T), caption=f"{tag}_alignment"
+                    plot_alignment_to_numpy(alignments[sample_idx].data.cpu().numpy().T), caption=f"{tag}_alignment"
                 ),
                 "Mel target": wandb.Image(
-                    plot_spectrogram_to_numpy(spec_target[0].data.cpu().numpy()), caption=f"{tag}_mel_target"
+                    plot_spectrogram_to_numpy(spec_target[sample_idx].data.cpu().numpy()), caption=f"{tag}_mel_target"
                 ),
                 "Mel predicted": wandb.Image(
-                    plot_spectrogram_to_numpy(mel_postnet[0].data.cpu().numpy()), caption=f"{tag}_gate"
+                    plot_spectrogram_to_numpy(mel_postnet[sample_idx].data.cpu().numpy()), caption=f"{tag}_gate"
                 ),
                 "Gate": wandb.Image(
                     plot_gate_outputs_to_numpy(
-                        gate_target[0].data.cpu().numpy(),
-                        torch.sigmoid(gate[0]).data.cpu().numpy(),
+                        gate_target[sample_idx].data.cpu().numpy(),
+                        torch.sigmoid(gate[sample_idx]).data.cpu().numpy(),
                     ),
                     caption=f"{tag}_gate",
                 ),
@@ -147,12 +148,12 @@ def tacotron2_log_to_wandb_func(
         )
         if add_audio:
             filterbank = librosa.filters.mel(sr=sr, n_fft=n_fft, n_mels=n_mels)
-            log_mel = mel_postnet[0].data.cpu().numpy().T
+            log_mel = mel_postnet[sample_idx].data.cpu().numpy().T
             mel = np.exp(log_mel)
             magnitude = np.dot(mel, filterbank) * griffin_lim_mag_scale
             predicted_audio = griffin_lim(magnitude.T ** griffin_lim_power, n_fft=n_fft)
 
-            log_mel = spec_target[0].data.cpu().numpy().T
+            log_mel = spec_target[sample_idx].data.cpu().numpy().T
             mel = np.exp(log_mel)
             magnitude = np.dot(mel, filterbank) * griffin_lim_mag_scale
             target_audio = griffin_lim(magnitude.T ** griffin_lim_power, n_fft=n_fft)
@@ -188,45 +189,46 @@ def tacotron2_log_to_tb_func(
     sr=22050,
     n_fft=1024,
     n_mels=80,
+    sample_idx=0,
 ):
     _, spec_target, mel_postnet, gate, gate_target, alignments = tensors
     if log_images and step % log_images_freq == 0:
         swriter.add_image(
             f"{tag}_alignment",
-            plot_alignment_to_numpy(alignments[0].data.cpu().numpy().T),
+            plot_alignment_to_numpy(alignments[sample_idx].data.cpu().numpy().T),
             step,
             dataformats="HWC",
         )
         swriter.add_image(
             f"{tag}_mel_target",
-            plot_spectrogram_to_numpy(spec_target[0].data.cpu().numpy()),
+            plot_spectrogram_to_numpy(spec_target[sample_idx].data.cpu().numpy()),
             step,
             dataformats="HWC",
         )
         swriter.add_image(
             f"{tag}_mel_predicted",
-            plot_spectrogram_to_numpy(mel_postnet[0].data.cpu().numpy()),
+            plot_spectrogram_to_numpy(mel_postnet[sample_idx].data.cpu().numpy()),
             step,
             dataformats="HWC",
         )
         swriter.add_image(
             f"{tag}_gate",
             plot_gate_outputs_to_numpy(
-                gate_target[0].data.cpu().numpy(),
-                torch.sigmoid(gate[0]).data.cpu().numpy(),
+                gate_target[sample_idx].data.cpu().numpy(),
+                torch.sigmoid(gate[sample_idx]).data.cpu().numpy(),
             ),
             step,
             dataformats="HWC",
         )
         if add_audio:
             filterbank = librosa.filters.mel(sr=sr, n_fft=n_fft, n_mels=n_mels)
-            log_mel = mel_postnet[0].data.cpu().numpy().T
+            log_mel = mel_postnet[sample_idx].data.cpu().numpy().T
             mel = np.exp(log_mel)
             magnitude = np.dot(mel, filterbank) * griffin_lim_mag_scale
             audio = griffin_lim(magnitude.T ** griffin_lim_power, n_fft=n_fft)
             swriter.add_audio(f"audio/{tag}_predicted", audio / max(np.abs(audio)), step, sample_rate=sr)
 
-            log_mel = spec_target[0].data.cpu().numpy().T
+            log_mel = spec_target[sample_idx].data.cpu().numpy().T
             mel = np.exp(log_mel)
             magnitude = np.dot(mel, filterbank) * griffin_lim_mag_scale
             audio = griffin_lim(magnitude.T ** griffin_lim_power, n_fft=n_fft)
