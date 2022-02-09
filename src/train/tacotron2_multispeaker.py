@@ -15,7 +15,8 @@ def main(cfg):
 
     lr_logger = pl.callbacks.LearningRateMonitor()
     epoch_time_logger = LogEpochTimeCallback()
-    trainer.callbacks.extend([lr_logger, epoch_time_logger])
+    device_monitor = pl.callbacks.gpu_stats_monitor.GPUStatsMonitor()
+    trainer.callbacks.extend([lr_logger, epoch_time_logger, device_monitor])
 
     trainer.fit(model)
 
