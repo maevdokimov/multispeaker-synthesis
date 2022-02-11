@@ -1,12 +1,12 @@
 name: ???
-sample_rate: 44100
+sample_rate: 22050
 # <PAD>, <BOS>, <EOS> will be added by the tacotron2.py script
 labels: [' ', '!', '"', "'", '(', ')', ',', '-', '.', ':', ';', '?', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
         'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z']
-n_fft: 2048
+n_fft: 1024
 n_mels: 80
 fmax: null
-n_stride: 512
+n_stride: 256
 pad_value: -11.52
 train_dataset: ???
 validation_datasets: ???
@@ -68,7 +68,7 @@ model:
     lowfreq: 0
     mag_power: 1.0
     n_fft: ${n_fft}
-    n_window_size: 2048
+    n_window_size: 1024
     n_window_stride: ${n_stride}
     normalize: null
     pad_to: 16
@@ -88,7 +88,7 @@ model:
     decoder_rnn_dim: 1024
     encoder_embedding_dim: ${model.encoder.encoder_embedding_dim}
     gate_threshold: 0.5
-    max_decoder_steps: 1500
+    max_decoder_steps: 1000
     n_frames_per_step: 1  # currently only 1 is supported
     n_mel_channels: ${n_mels}
     p_attention_dropout: 0.1
