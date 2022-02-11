@@ -13,6 +13,7 @@ def preprocess_ljspeech(root_path: Path, num_val_samples: int = 100):
     """Extracting only normalized text"""
     meta_path = root_path / "metadata.csv"
     df = pd.read_csv(meta_path, sep="|", header=None)
+    df.dropna(inplace=True)
     train_df, dev_df = train_test_split(df, test_size=num_val_samples, random_state=SEED)
 
     with open(root_path / "train.json", "w") as train_file:
