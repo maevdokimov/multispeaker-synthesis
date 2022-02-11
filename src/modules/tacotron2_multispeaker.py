@@ -59,9 +59,8 @@ class Decoder(NeuralModule):
         self.p_decoder_dropout = p_decoder_dropout
         self.early_stopping = early_stopping
 
-        pretrained_table_path = Path(pretrained_table_path)
-        if pretrained_table_path is not None and not pretrained_table_path.exists():
-            raise ValueError(f"No such file {str(pretrained_table_path)}")
+        if pretrained_table_path is not None and not Path(pretrained_table_path).exists():
+            raise ValueError(f"No such file {pretrained_table_path}")
 
         if pretrained_table_path is None:
             self.spk_embedding = torch.nn.Embedding(self.num_speakers, self.speaker_embed_dim)
@@ -77,19 +76,23 @@ class Decoder(NeuralModule):
 
         self.attention_layer = Attention(
             attention_rnn_dim,
-            encoder_embedding_dim,
+            encoder_embedding_dim + speaker_embed_dim,
             attention_dim,
             attention_location_n_filters,
             attention_location_kernel_size,
         )
 
-        self.decoder_rnn = torch.nn.LSTMCell(attention_rnn_dim + encoder_embedding_dim, decoder_rnn_dim, 1)
-
-        self.linear_projection = LinearNorm(
-            decoder_rnn_dim + encoder_embedding_dim, n_mel_channels * n_frames_per_step
+        self.decoder_rnn = torch.nn.LSTMCell(
+            attention_rnn_dim + encoder_embedding_dim + speaker_embed_dim, decoder_rnn_dim, 1
         )
 
-        self.gate_layer = LinearNorm(decoder_rnn_dim + encoder_embedding_dim, 1, bias=True, w_init_gain="sigmoid")
+        self.linear_projection = LinearNorm(
+            decoder_rnn_dim + encoder_embedding_dim + speaker_embed_dim, n_mel_channels * n_frames_per_step
+        )
+
+        self.gate_layer = LinearNorm(
+            decoder_rnn_dim + encoder_embedding_dim + speaker_embed_dim, 1, bias=True, w_init_gain="sigmoid"
+        )
 
     @property
     def input_types(self):
@@ -136,7 +139,9 @@ class Decoder(NeuralModule):
 
         self.attention_weights = Variable(memory.data.new(B, MAX_TIME).zero_())
         self.attention_weights_cum = Variable(memory.data.new(B, MAX_TIME).zero_())
-        self.attention_context = Variable(memory.data.new(B, self.encoder_embedding_dim).zero_())
+        self.attention_context = Variable(
+            memory.data.new(B, self.encoder_embedding_dim + self.speaker_embed_dim).zero_()
+        )
 
         self.memory = memory
         self.processed_memory = self.attention_layer.memory_layer(memory)
@@ -171,8 +176,8 @@ class Decoder(NeuralModule):
 
         return mel_outputs, gate_outputs, alignments
 
-    def decode(self, decoder_input, speaker_embedding):
-        cell_input = torch.cat((decoder_input, self.attention_context, speaker_embedding), -1)
+    def decode(self, decoder_input):
+        cell_input = torch.cat((decoder_input, self.attention_context), -1)
 
         self.attention_hidden, self.attention_cell = self.attention_rnn(
             cell_input, (self.attention_hidden, self.attention_cell)
@@ -211,14 +216,15 @@ class Decoder(NeuralModule):
         decoder_inputs = torch.cat((decoder_input, decoder_inputs), dim=0)
         decoder_inputs = self.prenet(decoder_inputs)
 
+        speaker_embed = self.spk_embedding(speaker_idx).unsqueeze(1)  # batch x speaker_embed_dim
+        speaker_embed = torch.repeat_interleave(speaker_embed, memory.size(1), 1)
+        memory = torch.cat([memory, speaker_embed], dim=2)
         self.initialize_decoder_states(memory, mask=~get_mask_from_lengths(memory_lengths))
-
-        speaker_embed = self.spk_embedding(speaker_idx)
 
         mel_outputs, gate_outputs, alignments = [], [], []
         while len(mel_outputs) < decoder_inputs.size(0) - 1:
             decoder_input = decoder_inputs[len(mel_outputs)]
-            mel_output, gate_output, attention_weights = self.decode(decoder_input, speaker_embed)
+            mel_output, gate_output, attention_weights = self.decode(decoder_input)
 
             mel_outputs += [mel_output.squeeze(1)]
             gate_outputs += [gate_output]
@@ -235,9 +241,10 @@ class Decoder(NeuralModule):
         else:
             mask = None
 
+        speaker_embed = self.spk_embedding(speaker_idx).unsqueeze(1)
+        speaker_embed = torch.repeat_interleave(speaker_embed, memory.size(1), 1)
+        memory = torch.cat([memory, speaker_embed], dim=2)
         self.initialize_decoder_states(memory, mask=mask)
-
-        speaker_embed = self.spk_embedding(speaker_idx)
 
         mel_lengths = torch.zeros([memory.size(0)], dtype=torch.int32)
         not_finished = torch.ones([memory.size(0)], dtype=torch.int32)
@@ -249,7 +256,7 @@ class Decoder(NeuralModule):
         stepped = False
         while True:
             decoder_input = self.prenet(decoder_input, inference=True)
-            mel_output, gate_output, alignment = self.decode(decoder_input, speaker_embed)
+            mel_output, gate_output, alignment = self.decode(decoder_input)
 
             dec = torch.le(torch.sigmoid(gate_output.data), self.gate_threshold).to(torch.int32).squeeze(1)
 
