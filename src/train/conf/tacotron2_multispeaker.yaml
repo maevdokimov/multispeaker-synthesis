@@ -10,7 +10,7 @@ n_stride: 512
 pad_value: -11.52
 train_dataset: ???
 validation_datasets: ???
-pretrained_table_path: ???
+pretrained_table_path: null
 
 log_val_sample_idx: null
 
