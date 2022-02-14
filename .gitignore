@@ -133,3 +133,6 @@ data/
 
 # Exp dir
 nemo_experiments/
+
+# Notebooks dir
+notebooks/
