@@ -136,3 +136,6 @@ nemo_experiments/
 
 # Notebooks dir
 notebooks/
+
+# Vscode
+.vscode/
