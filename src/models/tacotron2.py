@@ -29,6 +29,7 @@ class Tacotron2Model(Tacotron2Model):
                     sr=self.cfg.preprocessor.sample_rate,
                     n_fft=self.cfg.preprocessor.n_fft,
                     n_mels=self.cfg.preprocessor.nfilt,
+                    fmax=self.cfg.preprocessor.highfreq or self.cfg.preprocessor.sample_rate // 2,
                     sample_idx=self.cfg.log_val_sample_idx or 0,
                 )
 
