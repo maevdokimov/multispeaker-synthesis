@@ -1,23 +1,22 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from nemo.collections.tts.helpers.helpers import get_mask_from_lengths
 from nemo.collections.tts.modules.submodules import ConvNorm, LinearNorm
 from nemo.core.classes import NeuralModule, typecheck
 from nemo.core.neural_types.elements import (
     EmbeddedTextType,
-    LengthsType,
     EncodedRepresentation,
-    SequenceToSequenceAlignmentType,
-    MelSpectrogramType,
+    LengthsType,
     LogitsType,
+    MelSpectrogramType,
+    SequenceToSequenceAlignmentType,
 )
 from nemo.core.neural_types.neural_type import NeuralType
-from nemo.collections.tts.helpers.helpers import get_mask_from_lengths
 from nemo.utils import logging
 
+from src.modules.transformer import TransformerDecoder, TransformerEncoder
 from src.modules.transformer_submodules import PositionalEncoding
-from src.modules.transformer import TransformerEncoder, TransformerDecoder
 
 
 def parse_attention_outputs(attn_out, seq_lenghts):
@@ -127,7 +126,7 @@ class Encoder(NeuralModule):
 
         token_mask = get_mask_from_lengths(token_len)
         encoder_embedding, cached_states, cached_attn = self.transformer_encoder(attn_input, token_mask)
-        
+
         parsed_enc_attn = parse_attention_outputs(cached_attn, token_len)
 
         return encoder_embedding, cached_states, parsed_enc_attn

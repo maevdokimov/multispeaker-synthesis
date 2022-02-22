@@ -151,7 +151,9 @@ class Decoder(NeuralModule):
         # (B, n_mel_channels, T_out) -> (B, T_out, n_mel_channels)
         decoder_inputs = decoder_inputs.transpose(1, 2)
         decoder_inputs = decoder_inputs.view(
-            decoder_inputs.size(0), int(decoder_inputs.size(1) / self.n_frames_per_step), -1,
+            decoder_inputs.size(0),
+            int(decoder_inputs.size(1) / self.n_frames_per_step),
+            -1,
         )
         # (B, T_out, n_mel_channels) -> (T_out, B, n_mel_channels)
         decoder_inputs = decoder_inputs.transpose(0, 1)
@@ -183,10 +185,15 @@ class Decoder(NeuralModule):
         self.attention_hidden = F.dropout(self.attention_hidden, self.p_attention_dropout, self.training)
 
         attention_weights_cat = torch.cat(
-            (self.attention_weights.unsqueeze(1), self.attention_weights_cum.unsqueeze(1)), dim=1,
+            (self.attention_weights.unsqueeze(1), self.attention_weights_cum.unsqueeze(1)),
+            dim=1,
         )
         self.attention_context, self.attention_weights = self.attention_layer(
-            self.attention_hidden, self.memory, self.processed_memory, attention_weights_cat, self.mask,
+            self.attention_hidden,
+            self.memory,
+            self.processed_memory,
+            attention_weights_cat,
+            self.mask,
         )
 
         self.attention_weights_cum += self.attention_weights

@@ -72,10 +72,22 @@ def plot_spectrogram_to_numpy(spectrogram):
 def plot_gate_outputs_to_numpy(gate_targets, gate_outputs):
     fig, ax = plt.subplots(figsize=(12, 3))
     ax.scatter(
-        range(len(gate_targets)), gate_targets, alpha=0.5, color="green", marker="+", s=1, label="target",
+        range(len(gate_targets)),
+        gate_targets,
+        alpha=0.5,
+        color="green",
+        marker="+",
+        s=1,
+        label="target",
     )
     ax.scatter(
-        range(len(gate_outputs)), gate_outputs, alpha=0.5, color="red", marker=".", s=1, label="predicted",
+        range(len(gate_outputs)),
+        gate_outputs,
+        alpha=0.5,
+        color="red",
+        marker=".",
+        s=1,
+        label="predicted",
     )
 
     plt.xlabel("Frames (Green target, Red predicted)")
@@ -135,7 +147,8 @@ def tacotron2_log_to_tb_func(
         swriter.add_image(
             f"{tag}_gate",
             plot_gate_outputs_to_numpy(
-                gate_target[sample_idx].data.cpu().numpy(), torch.sigmoid(gate[sample_idx]).data.cpu().numpy(),
+                gate_target[sample_idx].data.cpu().numpy(),
+                torch.sigmoid(gate[sample_idx]).data.cpu().numpy(),
             ),
             step,
             dataformats="HWC",
@@ -198,7 +211,8 @@ def transformer_tts_log_to_tb_func(
         swriter.add_image(
             f"{tag}_gate",
             plot_gate_outputs_to_numpy(
-                gate_target[sample_idx].data.cpu().numpy(), torch.sigmoid(gate[sample_idx]).data.cpu().numpy(),
+                gate_target[sample_idx].data.cpu().numpy(),
+                torch.sigmoid(gate[sample_idx]).data.cpu().numpy(),
             ),
             step,
             dataformats="HWC",

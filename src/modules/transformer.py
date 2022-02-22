@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from nemo.collections.common.parts import form_attention_mask
 
-from src.modules.transformer_submodules import TransformerEncoderLayer, TransformerDecoderLayer
+from src.modules.transformer_submodules import TransformerDecoderLayer, TransformerEncoderLayer
 
 
 class TransformerEncoder(nn.Module):

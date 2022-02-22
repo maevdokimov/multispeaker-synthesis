@@ -2,7 +2,6 @@ import math
 
 import torch
 import torch.nn as nn
-
 from nemo.collections.tts.modules.submodules import LinearNorm
 
 

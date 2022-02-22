@@ -3,11 +3,6 @@ from typing import Any, Dict, List, Optional
 
 import torch
 from hydra.utils import instantiate
-from omegaconf import MISSING, DictConfig, OmegaConf, open_dict
-from omegaconf.errors import ConfigAttributeError
-from pytorch_lightning.loggers import LoggerCollection, TensorBoardLogger
-from torch import nn
-
 from nemo.collections.common.parts.preprocessing import parsers
 from nemo.collections.tts.models.base import SpectrogramGenerator
 from nemo.core.classes.common import typecheck
@@ -21,9 +16,13 @@ from nemo.core.neural_types.elements import (
 )
 from nemo.core.neural_types.neural_type import NeuralType
 from nemo.utils import logging
+from omegaconf import MISSING, DictConfig, OmegaConf, open_dict
+from omegaconf.errors import ConfigAttributeError
+from pytorch_lightning.loggers import LoggerCollection, TensorBoardLogger
+from torch import nn
 
-from src.utils.helpers import transformer_tts_log_to_tb_func
 from src.losses.transformer_tts_loss import TransformerTTSLoss
+from src.utils.helpers import transformer_tts_log_to_tb_func
 
 
 @dataclass
@@ -103,7 +102,11 @@ class TransformerTTSModel(SpectrogramGenerator):
         blank_id = params.get("blank_index", None) or -1
         do_normalize = params.get("normalize", True)
         self._parser = parsers.make_parser(
-            labels=self._cfg.labels, name=name, unk_id=unk_id, blank_id=blank_id, do_normalize=do_normalize,
+            labels=self._cfg.labels,
+            name=name,
+            unk_id=unk_id,
+            blank_id=blank_id,
+            do_normalize=do_normalize,
         )
         return self._parser
 
