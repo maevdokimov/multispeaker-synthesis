@@ -1,12 +1,12 @@
 import torch
 from nemo.collections.tts.helpers.helpers import get_mask_from_lengths
-from nemo.collections.tts.models.tacotron2 import Tacotron2Model
 from nemo.core.classes.common import typecheck
 from nemo.core.neural_types.elements import AudioSignal, EmbeddedTextType, LabelsType, LengthsType, MelSpectrogramType
 from nemo.core.neural_types.neural_type import NeuralType
 from omegaconf import DictConfig
 from pytorch_lightning.loggers import LoggerCollection, TensorBoardLogger
 
+from src.models.tacotron2 import Tacotron2Model
 from src.utils.helpers import tacotron2_log_to_tb_func
 
 
@@ -78,11 +78,11 @@ class Tacotron2Multispeaker(Tacotron2Model):
 
     def training_step(self, batch, batch_idx):
         audio, audio_len, tokens, token_len, speaker_idx = batch
-        spec_pred_dec, spec_pred_postnet, gate_pred, spec_target, spec_target_len, _ = self.forward(
+        spec_pred_dec, spec_pred_postnet, gate_pred, spec_target, spec_target_len, alignments = self.forward(
             audio=audio, audio_len=audio_len, tokens=tokens, token_len=token_len, speaker_idx=speaker_idx
         )
 
-        loss, _ = self.loss(
+        tacotron_loss, _ = self.loss(
             spec_pred_dec=spec_pred_dec,
             spec_pred_postnet=spec_pred_postnet,
             gate_pred=gate_pred,
@@ -91,11 +91,24 @@ class Tacotron2Multispeaker(Tacotron2Model):
             pad_value=self.pad_value,
         )
 
+        if self.calculate_guided_loss:
+            guided_loss = self.guided_attention_loss(
+                alignments=alignments,
+                spec_target_len=spec_target_len,
+                encoder_target_len=token_len,
+            )
+            loss = tacotron_loss + guided_loss
+            log = {"loss": loss, "tacotron_loss": tacotron_loss, "guided_loss": guided_loss}
+        else:
+            loss = tacotron_loss
+            log = {"loss": loss}
+
         output = {
             "loss": loss,
             "progress_bar": {"training_loss": loss},
-            "log": {"loss": loss},
+            "log": log,
         }
+
         return output
 
     def validation_step(self, batch, batch_idx):
