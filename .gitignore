@@ -139,4 +139,4 @@ nemo_experiments/
 
 # Outputs
 evaluation_results/
-models/
+.models/
