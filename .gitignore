@@ -139,3 +139,7 @@ notebooks/
 
 # Vscode
 .vscode/
+
+# Outputs
+evaluation_results/
+models/
