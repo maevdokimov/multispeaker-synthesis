@@ -1,3 +1,4 @@
+import random
 from typing import Dict, Optional, Union
 
 import torch
@@ -101,10 +102,14 @@ class AudioDataset(Dataset):
         randomly chosen if the audio is longer than n_segments.
         """
         example = self.collection[index]
-        features = AudioSegment.segment_from_file(
-            example.audio_file, n_segments=self.n_segments, trim=self.trim, target_sr=self.sample_rate
-        )
-        features = torch.tensor(features.samples)
+        segment = AudioSegment.from_file(example.audio_file, target_sr=self.sample_rate, trim=self.trim)
+        features = segment.samples
+        if self.n_segments > 0 and features.shape[0] > self.n_segments:
+            max_audio_start = features.shape[0] - self.n_segments
+            audio_start = random.randint(0, max_audio_start)
+            features = features[audio_start : audio_start + self.n_segments]
+
+        features = torch.tensor(features)
         audio, audio_length = features, torch.tensor(features.shape[0]).long()
 
         truncate = audio_length % self.truncate_to
