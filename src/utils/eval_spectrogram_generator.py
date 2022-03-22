@@ -14,7 +14,7 @@ def parse_target(target: str):
     return ".".join(target_parts[:-1]), target_parts[-1]
 
 
-def load_acoustic_model(ckpt_path: Path):
+def load_nemo_model(ckpt_path: Path):
     d = torch.load(ckpt_path, map_location=DEVICE)
     conf = d["hyper_parameters"]
     with omegaconf.open_dict(conf):
@@ -72,7 +72,7 @@ if __name__ == "__main__":
     parser.add_argument("--speakers", type=int, nargs="+")
     args = parser.parse_args()
 
-    model = load_acoustic_model(args.ckpt_path)
+    model = load_nemo_model(args.ckpt_path)
     print("Successfully loaded acoustic model")
 
     generate_spectrograms(model, args.output_path, args.input_file, args.speakers)

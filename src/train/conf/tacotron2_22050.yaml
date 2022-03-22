@@ -17,6 +17,11 @@ model:
   labels: ${labels}
   log_val_sample_idx: ${log_val_sample_idx}
 
+  guided_attention_loss:
+    _target_: "src.losses.guided_attention_loss.GuidedAttentionLoss"
+    g: 0.2
+    scale: 1.
+
   train_ds:
     dataset:
       _target_: "nemo.collections.asr.data.audio_to_text.AudioToCharDataset"
