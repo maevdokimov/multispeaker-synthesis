@@ -185,24 +185,24 @@ class FastSpeech2Dataset(Dataset):
         f, fl = features, torch.tensor(features.shape[0]).long()
         t, tl = sample.text_tokens.long(), torch.tensor(len(sample.text_tokens)).long()
 
-        pitches, energies, speaker = None, None, None
+        pitches, energies = None, None
         if self.load_supplementary_values:
             pitches = sample.pitches
             energies = sample.energies
         if self.load_speaker:
-            speaker = sample.speaker
+            return f, fl, t, tl, sample.duration, pitches, energies, sample.speaker
 
-        return f, fl, t, tl, sample.duration, pitches, energies, speaker
+        return f, fl, t, tl, sample.duration, pitches, energies
 
     def __len__(self):
         return len(self.data)
 
     def _collate_fn(self, batch):
         pad_id = len(self.phone2idx)
-        if self.load_supplementary_values:
+        if self.load_speaker:
             _, audio_lengths, _, tokens_lengths, duration, pitches, energies, _ = zip(*batch)
         else:
-            _, audio_lengths, _, tokens_lengths, duration, _, _, _ = zip(*batch)
+            _, audio_lengths, _, tokens_lengths, duration, pitches, energies = zip(*batch)
         max_audio_len = 0
         max_audio_len = max(audio_lengths).item()
         max_tokens_len = max(tokens_lengths).item()
@@ -220,7 +220,10 @@ class FastSpeech2Dataset(Dataset):
         # Add padding where necessary
         audio_signal, tokens, duration_batched, pitches_batched, energies_batched = [], [], [], [], []
         for sample_tuple in batch:
-            sig, sig_len, tokens_i, tokens_i_len, duration, pitch, energy, speakers = sample_tuple
+            if self.load_speaker:
+                sig, sig_len, tokens_i, tokens_i_len, duration, pitch, energy, speakers = sample_tuple
+            else:
+                sig, sig_len, tokens_i, tokens_i_len, duration, pitch, energy = sample_tuple
 
             sig_len = sig_len.item()
             if sig_len < max_audio_len:
@@ -255,13 +258,24 @@ class FastSpeech2Dataset(Dataset):
         tokens_lengths = torch.stack(tokens_lengths)
         duration_batched = torch.stack(duration_batched)
 
-        pitches_batched, energies_batched, speakers_batched = None, None, None
+        pitches_batched, energies_batched = None, None
         if self.load_supplementary_values:
             pitches_batched = torch.stack(pitches_batched)
             energies_batched = torch.stack(energies_batched)
             assert pitches_batched.shape == energies_batched.shape
         if self.load_speaker:
             speakers_batched = torch.tensor(speakers, dtype=torch.int32)
+
+            return (
+                audio_signal,
+                audio_lengths,
+                tokens,
+                tokens_lengths,
+                duration_batched,
+                pitches_batched,
+                energies_batched,
+                speakers_batched,
+            )
 
         return (
             audio_signal,
@@ -271,5 +285,4 @@ class FastSpeech2Dataset(Dataset):
             duration_batched,
             pitches_batched,
             energies_batched,
-            speakers_batched,
         )
