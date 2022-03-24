@@ -1,0 +1,8 @@
+sampling_rate: 22050
+
+fmin: 80
+fmax: 800
+frame_length: 1024
+
+n_fft: 1024
+hop_length: 256
