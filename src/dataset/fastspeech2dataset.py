@@ -27,6 +27,7 @@ class FastSpeech2Dataset(Dataset):
             "durations": NeuralType(("B", "T"), TokenDurationType()),
             "pitches": NeuralType(("B", "T"), RegressionValuesType()),
             "energies": NeuralType(("B", "T"), RegressionValuesType()),
+            "speakers": NeuralType(("B"), LabelsType(), optional=True),
         }
 
     def __init__(
