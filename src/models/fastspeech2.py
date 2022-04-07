@@ -89,11 +89,12 @@ class FastSpeech2Model(SpectrogramGenerator):
             "pitch_preds": NeuralType(("B", "T"), RegressionValuesType(), optional=True),
             "energy_preds": NeuralType(("B", "T"), RegressionValuesType(), optional=True),
             "encoded_text_mask": NeuralType(("B", "T", "D"), MaskType()),
+            "predicted_spec_len": NeuralType(("B"), LengthsType()),
         },
     )
     def forward(self, *, text, text_length, spec_len=None, durations=None, pitch=None, energies=None, speaker=None):
         encoded_text, encoded_text_mask = self.encoder(text=text, text_length=text_length)
-        aligned_text, log_dur_preds, pitch_preds, energy_preds, spec_len = self.variance_adapter(
+        aligned_text, log_dur_preds, pitch_preds, energy_preds, predicted_spec_len = self.variance_adapter(
             x=encoded_text,
             x_len=text_length,
             dur_target=durations,
@@ -102,8 +103,8 @@ class FastSpeech2Model(SpectrogramGenerator):
             speaker=speaker,
             spec_len=spec_len,
         )
-        mel = self.mel_decoder(decoder_input=aligned_text, lengths=spec_len)
-        return mel, log_dur_preds, pitch_preds, energy_preds, encoded_text_mask
+        mel = self.mel_decoder(decoder_input=aligned_text, lengths=predicted_spec_len)
+        return mel, log_dur_preds, pitch_preds, energy_preds, encoded_text_mask, predicted_spec_len
 
     def training_step(self, batch, batch_idx):
         if self.speaker:
@@ -112,7 +113,7 @@ class FastSpeech2Model(SpectrogramGenerator):
             f, fl, t, tl, durations, pitch, energies = batch
             speaker_id = None
         spec, spec_len = self.audio_to_melspec_preprocessor(f, fl)
-        mel, log_dur_preds, pitch_preds, energy_preds, encoded_text_mask = self(
+        mel, log_dur_preds, pitch_preds, energy_preds, encoded_text_mask, predicted_spec_len = self(
             text=t,
             text_length=tl,
             spec_len=spec_len,
@@ -122,7 +123,7 @@ class FastSpeech2Model(SpectrogramGenerator):
             speaker=speaker_id,
         )
         total_loss = self.loss(
-            spec_pred=mel.transpose(1, 2), spec_target=spec, spec_target_len=spec_len, pad_value=-11.52
+            spec_pred=mel.transpose(1, 2), spec_target=spec, spec_target_len=predicted_spec_len, pad_value=-11.52
         )
         self.log(name="train_mel_loss", value=total_loss.clone().detach())
 
@@ -134,15 +135,16 @@ class FastSpeech2Model(SpectrogramGenerator):
         self.log(name="train_dur_loss", value=dur_loss)
         total_loss += dur_loss
 
+        max_seq_len = predicted_spec_len.max()
         # Pitch prediction loss
         if self.pitch:
-            pitch_loss = self.mseloss(pitch_preds, pitch)
+            pitch_loss = self.mseloss(pitch_preds, pitch[:, :max_seq_len])
             total_loss += pitch_loss
             self.log(name="train_pitch_loss", value=pitch_loss)
 
         # Energy prediction loss
         if self.energy:
-            energy_loss = self.mseloss(energy_preds, energies)
+            energy_loss = self.mseloss(energy_preds, energies[:, :max_seq_len])
             total_loss += energy_loss
             self.log(name="train_energy_loss", value=energy_loss)
         self.log(name="train_loss", value=total_loss)
@@ -179,8 +181,10 @@ class FastSpeech2Model(SpectrogramGenerator):
             f, fl, t, tl, _, _, _ = batch
             spk = None
         spec, spec_len = self.audio_to_melspec_preprocessor(f, fl)
-        mel, _, _, _, _ = self(text=t, text_length=tl, spec_len=spec_len, speaker=spk)
-        loss = self.loss(spec_pred=mel.transpose(1, 2), spec_target=spec, spec_target_len=spec_len, pad_value=-11.52)
+        mel, _, _, _, _, predicted_spec_len = self(text=t, text_length=tl, spec_len=spec_len, speaker=spk)
+        loss = self.loss(
+            spec_pred=mel.transpose(1, 2), spec_target=spec, spec_target_len=predicted_spec_len, pad_value=-11.52
+        )
         return {
             "val_loss": loss,
             "mel_target": spec,

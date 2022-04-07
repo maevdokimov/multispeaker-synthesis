@@ -148,6 +148,7 @@ class VarianceAdaptor(NeuralModule):
         # Output is Batch, Time
         if dur_target is not None:
             dur_out = self.length_regulator(x, dur_target)
+            spec_len = torch.min(spec_len, dur_target.sum(-1))
         else:
             dur_preds = torch.clamp_min(torch.round(torch.exp(log_dur_preds)) - 1, 0).long()
             if not torch.sum(dur_preds, dim=1).bool().all():
@@ -155,8 +156,11 @@ class VarianceAdaptor(NeuralModule):
                 dur_preds += 1
             dur_out = self.length_regulator(x, dur_preds)
             spec_len = torch.sum(dur_preds, dim=1)
+
+        padding_mask = get_mask_from_lengths(spec_len)
+
         out = dur_out
-        out *= get_mask_from_lengths(spec_len).unsqueeze(-1)
+        out *= padding_mask.unsqueeze(-1)
 
         # Pitch
         pitch_preds = None
@@ -165,28 +169,31 @@ class VarianceAdaptor(NeuralModule):
             #   Add pitch spectrogram prediction & conversion back to pitch contour using iCWT
             #   (see Appendix C of the FastSpeech 2/2s paper).
             pitch_preds = self.pitch_predictor(dur_out)
-            pitch_preds.masked_fill_(~get_mask_from_lengths(spec_len), 0)
+            pitch_preds.masked_fill_(~padding_mask, 0)
             if pitch_target is not None:
                 pitch_out = self.pitch_lookup(torch.bucketize(pitch_target, self.pitch_bins))
             else:
                 pitch_out = self.pitch_lookup(torch.bucketize(pitch_preds.detach(), self.pitch_bins))
+            pitch_out = pitch_out[:, : spec_len.max()]
             out = out + pitch_out
-        out *= get_mask_from_lengths(spec_len).unsqueeze(-1)
+            out *= padding_mask.unsqueeze(-1)
 
         # Energy
         energy_preds = None
         if self.energy:
             energy_preds = self.energy_predictor(dur_out)
+            energy_preds.masked_fill_(~padding_mask, 0)
             if energy_target is not None:
                 energy_out = self.energy_lookup(torch.bucketize(energy_target, self.energy_bins))
             else:
                 energy_out = self.energy_lookup(torch.bucketize(energy_preds.detach(), self.energy_bins))
+            energy_out = energy_out[:, : spec_len.max()]
             out = out + energy_out
-        out *= get_mask_from_lengths(spec_len).unsqueeze(-1)
+            out *= padding_mask.unsqueeze(-1)
 
         if self.speaker:
-            speaker_embed = self.spk_embedding(speaker)
-            print(speaker_embed.shape, out.shape)
-            exit(0)
+            speaker_embed = self.spk_embedding(speaker).unsqueeze(1)
+            out = out + speaker_embed
+            out *= padding_mask.unsqueeze(-1)
 
         return out, log_dur_preds, pitch_preds, energy_preds, spec_len
