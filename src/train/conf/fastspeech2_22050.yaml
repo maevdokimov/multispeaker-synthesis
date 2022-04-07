@@ -11,15 +11,15 @@ ignore_file: ???
 model:
   add_pitch_predictor: True
   add_energy_predictor: True
-  add_speaker: False
-  num_speakers: null
+  add_speaker: True
+  num_speakers: 108
   d_model: 256
   duration_coeff: 0.25
   mappings_filepath: ${mappings_file}
 
   train_ds:
     dataset:
-      _target_: "nemo.collections.tts.data.datalayers.FastSpeech2Dataset"
+      _target_: "src.dataset.fastspeech2dataset.FastSpeech2Dataset"
       manifest_filepath: ${train_dataset}
       mappings_filepath: ${mappings_file}
       sample_rate: ${sample_rate}
@@ -27,6 +27,7 @@ model:
       min_duration: 0.1
       ignore_file: ${ignore_file}
       trim: false
+      load_supplementary_values: true
       load_speaker: ${model.add_speaker}
     dataloader_params:
       drop_last: false
@@ -36,7 +37,7 @@ model:
 
   validation_ds:
     dataset:
-      _target_: "nemo.collections.tts.data.datalayers.FastSpeech2Dataset"
+      _target_: "src.dataset.fastspeech2dataset.FastSpeech2Dataset"
       manifest_filepath: ${validation_datasets}
       mappings_filepath: ${mappings_file}
       sample_rate: ${sample_rate}
