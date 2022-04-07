@@ -11,6 +11,8 @@ ignore_file: ???
 model:
   add_pitch_predictor: True
   add_energy_predictor: True
+  add_speaker: False
+  num_speakers: null
   d_model: 256
   duration_coeff: 0.25
   mappings_filepath: ${mappings_file}
@@ -25,6 +27,7 @@ model:
       min_duration: 0.1
       ignore_file: ${ignore_file}
       trim: false
+      load_speaker: ${model.add_speaker}
     dataloader_params:
       drop_last: false
       shuffle: true
@@ -40,6 +43,7 @@ model:
       ignore_file: ${ignore_file}
       trim: false
       load_supplementary_values: false
+      load_speaker: ${model.add_speaker}
     dataloader_params:
       drop_last: false
       shuffle: false
@@ -112,6 +116,8 @@ model:
     energy_kernel_size: 3
     energy_min: 0.0
     energy_max: 600.0
+    speaker: ${model.add_speaker}
+    num_speakers: ${model.num_speakers}
 
   optim:
     name: adam

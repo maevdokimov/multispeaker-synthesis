@@ -4,7 +4,13 @@ import torch.nn as nn
 from nemo.collections.tts.helpers.helpers import get_mask_from_lengths
 from nemo.collections.tts.modules.fastspeech2_submodules import LengthRegulator, VariancePredictor
 from nemo.core.classes import NeuralModule, typecheck
-from nemo.core.neural_types.elements import EncodedRepresentation, LengthsType, RegressionValuesType, TokenDurationType
+from nemo.core.neural_types.elements import (
+    EncodedRepresentation,
+    LabelsType,
+    LengthsType,
+    RegressionValuesType,
+    TokenDurationType,
+)
 from nemo.core.neural_types.neural_type import NeuralType
 from nemo.utils import logging
 
@@ -27,6 +33,8 @@ class VarianceAdaptor(NeuralModule):
         energy_kernel_size=3,
         energy_min=0.0,
         energy_max=600.0,
+        speaker=False,
+        num_speakers=None,
     ):
         """
         FastSpeech 2 variance adaptor, which adds information like duration, pitch, etc. to the phoneme encoding.
@@ -48,6 +56,8 @@ class VarianceAdaptor(NeuralModule):
             energy_kernel_size: Kernel size for the energy predictor. Defaults to 3.
             energy_min: Defaults to 0.0.
             energy_max: Defaults to 600.0.
+            speaker (bool): Whether or not to use speaker information
+            num_speakers: number of speakers in dataset
         """
         super().__init__()
 
@@ -59,6 +69,7 @@ class VarianceAdaptor(NeuralModule):
 
         self.pitch = pitch
         self.energy = energy
+        self.speaker = speaker
 
         # -- Pitch Setup --
         # NOTE: Pitch is clamped to 1e-5 which gets mapped to bin 1. But it is padded with 0s that get mapped to bin 0.
@@ -91,6 +102,9 @@ class VarianceAdaptor(NeuralModule):
             )
             self.energy_lookup = nn.Embedding(n_energy_bins, d_model)
 
+        if self.speaker:
+            self.spk_embedding = nn.Embedding(num_speakers, d_model)
+
     @property
     def input_types(self):
         return {
@@ -99,6 +113,7 @@ class VarianceAdaptor(NeuralModule):
             "dur_target": NeuralType(("B", "T"), TokenDurationType(), optional=True),
             "pitch_target": NeuralType(("B", "T"), RegressionValuesType(), optional=True),
             "energy_target": NeuralType(("B", "T"), RegressionValuesType(), optional=True),
+            "speaker": NeuralType(("B"), LabelsType(), optional=True),
             "spec_len": NeuralType(("B"), LengthsType(), optional=True),
         }
 
@@ -113,7 +128,9 @@ class VarianceAdaptor(NeuralModule):
         }
 
     @typecheck()
-    def forward(self, *, x, x_len, dur_target=None, pitch_target=None, energy_target=None, spec_len=None):
+    def forward(
+        self, *, x, x_len, dur_target=None, pitch_target=None, energy_target=None, speaker=None, spec_len=None
+    ):
         """
         Args:
             x: Input from the encoder.
@@ -121,6 +138,7 @@ class VarianceAdaptor(NeuralModule):
             dur_target:  Duration targets for the duration predictor. Needs to be passed in during training.
             pitch_target: Pitch targets for the pitch predictor. Needs to be passed in during training.
             energy_target: Energy targets for the energy predictor. Needs to be passed in during training.
+            speaker: speaker ID
             spec_len: Target spectrogram length. Needs to be passed in during training.
         """
         # Duration predictions (or ground truth) fed into Length Regulator to
@@ -130,6 +148,7 @@ class VarianceAdaptor(NeuralModule):
         # Output is Batch, Time
         if dur_target is not None:
             dur_out = self.length_regulator(x, dur_target)
+            spec_len = torch.min(spec_len, dur_target.sum(-1))
         else:
             dur_preds = torch.clamp_min(torch.round(torch.exp(log_dur_preds)) - 1, 0).long()
             if not torch.sum(dur_preds, dim=1).bool().all():
@@ -137,8 +156,11 @@ class VarianceAdaptor(NeuralModule):
                 dur_preds += 1
             dur_out = self.length_regulator(x, dur_preds)
             spec_len = torch.sum(dur_preds, dim=1)
+
+        padding_mask = get_mask_from_lengths(spec_len)
+
         out = dur_out
-        out *= get_mask_from_lengths(spec_len).unsqueeze(-1)
+        out *= padding_mask.unsqueeze(-1)
 
         # Pitch
         pitch_preds = None
@@ -147,23 +169,31 @@ class VarianceAdaptor(NeuralModule):
             #   Add pitch spectrogram prediction & conversion back to pitch contour using iCWT
             #   (see Appendix C of the FastSpeech 2/2s paper).
             pitch_preds = self.pitch_predictor(dur_out)
-            pitch_preds.masked_fill_(~get_mask_from_lengths(spec_len), 0)
+            pitch_preds.masked_fill_(~padding_mask, 0)
             if pitch_target is not None:
                 pitch_out = self.pitch_lookup(torch.bucketize(pitch_target, self.pitch_bins))
             else:
                 pitch_out = self.pitch_lookup(torch.bucketize(pitch_preds.detach(), self.pitch_bins))
+            pitch_out = pitch_out[:, : spec_len.max()]
             out = out + pitch_out
-        out *= get_mask_from_lengths(spec_len).unsqueeze(-1)
+            out *= padding_mask.unsqueeze(-1)
 
         # Energy
         energy_preds = None
         if self.energy:
             energy_preds = self.energy_predictor(dur_out)
+            energy_preds.masked_fill_(~padding_mask, 0)
             if energy_target is not None:
                 energy_out = self.energy_lookup(torch.bucketize(energy_target, self.energy_bins))
             else:
                 energy_out = self.energy_lookup(torch.bucketize(energy_preds.detach(), self.energy_bins))
+            energy_out = energy_out[:, : spec_len.max()]
             out = out + energy_out
-        out *= get_mask_from_lengths(spec_len).unsqueeze(-1)
+            out *= padding_mask.unsqueeze(-1)
+
+        if self.speaker:
+            speaker_embed = self.spk_embedding(speaker).unsqueeze(1)
+            out = out + speaker_embed
+            out *= padding_mask.unsqueeze(-1)
 
         return out, log_dur_preds, pitch_preds, energy_preds, spec_len

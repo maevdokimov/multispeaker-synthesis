@@ -27,6 +27,7 @@ class FastSpeech2Dataset(Dataset):
             "durations": NeuralType(("B", "T"), TokenDurationType()),
             "pitches": NeuralType(("B", "T"), RegressionValuesType()),
             "energies": NeuralType(("B", "T"), RegressionValuesType()),
+            "speakers": NeuralType(("B"), LabelsType(), optional=True),
         }
 
     def __init__(
@@ -142,6 +143,11 @@ class FastSpeech2Dataset(Dataset):
             # Else not pruned, load additional info
             # Phoneme durations and text token indices from durations file
             dur_path = root_path / "phoneme_durations" / audio_path.parts[-2] / f"{audio_path.stem}.pt"
+            if not dur_path.exists():
+                pruned_items += 1
+                pruned_duration += item["duration"]
+                continue
+
             duration_info = torch.load(dur_path)
             durs = duration_info["token_duration"]
             text_tokens = duration_info["text_encoded"]
@@ -218,10 +224,17 @@ class FastSpeech2Dataset(Dataset):
                 )
 
         # Add padding where necessary
-        audio_signal, tokens, duration_batched, pitches_batched, energies_batched = [], [], [], [], []
+        audio_signal, tokens, duration_batched, pitches_batched, energies_batched, speakers_batched = (
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+        )
         for sample_tuple in batch:
             if self.load_speaker:
-                sig, sig_len, tokens_i, tokens_i_len, duration, pitch, energy, speakers = sample_tuple
+                sig, sig_len, tokens_i, tokens_i_len, duration, pitch, energy, speaker = sample_tuple
             else:
                 sig, sig_len, tokens_i, tokens_i_len, duration, pitch, energy = sample_tuple
 
@@ -252,19 +265,22 @@ class FastSpeech2Dataset(Dataset):
                     energy = torch.nn.functional.pad(energy, pad)
                 energies_batched.append(energy)
 
+            if self.load_speaker:
+                speakers_batched.append(speaker)
+
         audio_signal = torch.stack(audio_signal)
         audio_lengths = torch.stack(audio_lengths)
         tokens = torch.stack(tokens)
         tokens_lengths = torch.stack(tokens_lengths)
         duration_batched = torch.stack(duration_batched)
 
-        pitches_batched, energies_batched = None, None
+        pitches_stacked, energies_stacked = None, None
         if self.load_supplementary_values:
-            pitches_batched = torch.stack(pitches_batched)
-            energies_batched = torch.stack(energies_batched)
-            assert pitches_batched.shape == energies_batched.shape
+            pitches_stacked = torch.stack(pitches_batched)
+            energies_stacked = torch.stack(energies_batched)
+            assert pitches_stacked.shape == energies_stacked.shape
         if self.load_speaker:
-            speakers_batched = torch.tensor(speakers, dtype=torch.int32)
+            speakers_batched = torch.tensor(speakers_batched, dtype=torch.int32)
 
             return (
                 audio_signal,
@@ -272,8 +288,8 @@ class FastSpeech2Dataset(Dataset):
                 tokens,
                 tokens_lengths,
                 duration_batched,
-                pitches_batched,
-                energies_batched,
+                pitches_stacked,
+                energies_stacked,
                 speakers_batched,
             )
 
@@ -283,6 +299,6 @@ class FastSpeech2Dataset(Dataset):
             tokens,
             tokens_lengths,
             duration_batched,
-            pitches_batched,
-            energies_batched,
+            pitches_stacked,
+            energies_stacked,
         )
