@@ -12,13 +12,14 @@ def inspect_dataset(file_path: Path):
     text_cnt = 0
     text_normalized_cnt = 0
     text_no_preprocessing_cnt = 0
-    durations = []
+    durations, speakers = [], []
 
     with open(file_path, "r") as file:
         for line in file:
             d = json.loads(line)
             file_cnt += 1
             durations.append(d["duration"])
+            speakers.append(d["speaker"])
 
             if "text" in d.keys():
                 chars.update(d["text"])
@@ -55,6 +56,11 @@ def inspect_dataset(file_path: Path):
     print(f"10 percentile: {np.quantile(durations, 0.10)}")
     print(f"5 percentile: {np.quantile(durations, 0.05)}")
     print(f"1 percentile: {np.quantile(durations, 0.01)}")
+
+    print("----------Speakers----------")
+    unique_speakers = np.unique(speakers)
+    print(f"Speakers: {unique_speakers}")
+    print(f"Num speakers: {len(unique_speakers)}")
 
 
 if __name__ == "__main__":
