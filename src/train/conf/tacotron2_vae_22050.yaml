@@ -20,7 +20,6 @@ model:
 
   train_ds:
     dataset:
-      # _target_: "nemo.collections.asr.data.audio_to_text.AudioToCharDataset"
       _target_: nemo.collections.asr.data.audio_to_text.AudioToCharDataset
       manifest_filepath: ${train_dataset}
       max_duration: 11
@@ -35,13 +34,12 @@ model:
     dataloader_params:
       drop_last: false
       shuffle: true
-      batch_size: 12
+      batch_size: 26
       num_workers: 4
 
 
   validation_ds:
     dataset:
-      # _target_: "nemo.collections.asr.data.audio_to_text.AudioToCharDataset"
       _target_: nemo.collections.asr.data.audio_to_text.AudioToCharDataset
       manifest_filepath: ${validation_datasets}
       max_duration: 11
@@ -56,7 +54,7 @@ model:
     dataloader_params:
       drop_last: false
       shuffle: false
-      batch_size: 12
+      batch_size: 26
       num_workers: 4
 
   preprocessor:
