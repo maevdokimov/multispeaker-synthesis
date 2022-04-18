@@ -77,7 +77,7 @@ def generate_spectrograms(acoustic_model, output_path, input_file_path, speakers
                     specs.append(spec)
                     print(f"\tFor speaker: {speaker.item()}\n\tSpectrogram shape: {spec.shape}")
 
-        if speaker is None:
+        if speakers is None:
             torch.save(spec.cpu(), output_path / f"spec_{i}.pt")
         else:
             for speaker, spec in zip(speakers, specs):
@@ -143,4 +143,5 @@ if __name__ == "__main__":
 
     print_config_diff(conf_acoustic, conf_vocoder)
 
-    eval_pipeline(acoustic_model, vocoder, args.output_path, args.input_file, conf_vocoder.sample_rate, args.speakers)
+    # eval_pipeline(acoustic_model, vocoder, args.output_path, args.input_file, conf_vocoder.sample_rate, args.speakers)
+    generate_spectrograms(acoustic_model, args.output_path, args.input_file, args.speakers)
