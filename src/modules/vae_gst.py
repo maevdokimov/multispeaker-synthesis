@@ -1,18 +1,14 @@
-import numpy as np
 import torch
 import torch.nn as nn
-from nemo.collections.tts.helpers.helpers import get_mask_from_lengths
-from nemo.collections.tts.modules.fastspeech2_submodules import LengthRegulator, VariancePredictor
 from nemo.core.classes import NeuralModule, typecheck
 from nemo.core.neural_types.elements import (
     EncodedRepresentation,
-    LabelsType,
-    LengthsType,
-    RegressionValuesType,
-    TokenDurationType,
+    MelSpectrogramType,
+    NormalDistributionLogVarianceType,
+    NormalDistributionMeanType,
+    NormalDistributionSamplesType,
 )
 from nemo.core.neural_types.neural_type import NeuralType
-from nemo.utils import logging
 
 
 class ReferenceEncoder(NeuralModule):
@@ -28,17 +24,17 @@ class ReferenceEncoder(NeuralModule):
         ref_enc_gru_size=256,
     ):
         super().__init__()
-        filters = [1] + ref_enc_filters
+        filters = [1] + list(ref_enc_filters)
 
         convs = nn.ModuleList([])
-        for i in range(len(ref_enc_filters) - 2):
+        for i in range(len(filters) - 1):
             convs.append(
                 nn.Conv2d(filters[i], filters[i + 1], kernel_size=kernel_size, stride=stride, padding=padding)
             )
             convs.append(nn.BatchNorm2d(filters[i + 1]))
             convs.append(nn.ReLU())
 
-        self.convs = nn.Sequential(convs)
+        self.convs = nn.Sequential(*convs)
 
         out_channels = self.calculate_channels(n_mels, kernel_size, stride, padding, len(ref_enc_filters))
         self.gru = nn.GRU(
@@ -50,14 +46,32 @@ class ReferenceEncoder(NeuralModule):
         self.out_var = nn.Linear(ref_enc_gru_size, z_latent_dim)
         self.out_layer = nn.Linear(z_latent_dim, output_dim)
 
-    def forward(self, inputs):
-        out = inputs.unsqueeze(1)
-        out = self.convs(out)
+    @property
+    def input_types(self):
+        return {
+            "ref_spec": NeuralType(("B", "D", "T"), MelSpectrogramType()),
+        }
 
-        out = out.transpose(1, 2)
-        out = out.reshape(out.shape[0], out.shape[1], -1)
+    @property
+    def output_types(self):
+        return {
+            "style_embed": NeuralType(("B", "D"), EncodedRepresentation()),
+            "mu": NeuralType(("B", "D"), NormalDistributionMeanType()),
+            "logvar": NeuralType(("B", "D"), NormalDistributionLogVarianceType()),
+            "z": NeuralType(("B", "D"), NormalDistributionSamplesType()),
+        }
 
-        _, out = self.gru(out)
+    @typecheck()
+    def forward(self, ref_spec):
+        ref_spec = ref_spec.transpose(1, 2).unsqueeze(1)  # (batch, 1, T, n_mels)
+        ref_spec_encoded = self.convs(ref_spec)  # (batch, ref_enc_filters[-1], T//2^K, n_mels//2^K)
+
+        ref_spec_encoded = ref_spec_encoded.transpose(1, 2)  # (batch, T//2^K, ref_enc_filters[-1], n_mels//2^K)
+        ref_spec_encoded = ref_spec_encoded.reshape(
+            ref_spec_encoded.shape[0], ref_spec_encoded.shape[1], -1
+        )  # (batch, T//2^K, ref_enc_filters[-1]*n_mels//2^K)
+
+        _, out = self.gru(ref_spec_encoded)
         out = out.squeeze(0)
 
         mu = self.out_mu(out)
