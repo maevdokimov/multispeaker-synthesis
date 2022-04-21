@@ -23,6 +23,7 @@ def create_token2idx_dict(dict_path: Path, mapping_path: Path):
     word2phones['"'] = [" "]
     word2phones["-"] = [" "]
 
+    phonemes = sorted(list(phonemes))
     phone2idx = {k: i for i, k in enumerate(phonemes)}
     phone2idx[" "] = len(phone2idx)
     phone2idx["sil"] = phone2idx[" "]
