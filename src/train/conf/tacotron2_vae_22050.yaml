@@ -10,7 +10,6 @@ n_stride: 256
 pad_value: -11.52
 train_dataset: ???
 validation_datasets: ???
-pretrained_table_path: null
 
 log_val_sample_idx: null
 
@@ -18,9 +17,20 @@ model:
   labels: ${labels}
   log_val_sample_idx: ${log_val_sample_idx}
 
+  guided_attention_loss:
+    _target_: src.losses.guided_attention_loss.GuidedAttentionLoss
+    g: 0.2
+    scale: 1.0
+
+  classification_loss:
+    num_speakers: 109
+    scale: 1.
+    counts_filepath: ???
+    on_style: True
+
   train_ds:
     dataset:
-      _target_: nemo.collections.asr.data.audio_to_text.AudioToCharDataset
+      _target_: src.dataset.audio_to_text.AudioToCharDataset
       manifest_filepath: ${train_dataset}
       max_duration: 11
       min_duration: 0.1
@@ -28,6 +38,7 @@ model:
       int_values: false
       normalize: true
       sample_rate: ${sample_rate}
+      return_speaker_id: true
       # bos_id: 66
       # eos_id: 67
       # pad_id: 68  These parameters are added automatically in Tacotron2
@@ -37,10 +48,9 @@ model:
       batch_size: 26
       num_workers: 4
 
-
   validation_ds:
     dataset:
-      _target_: nemo.collections.asr.data.audio_to_text.AudioToCharDataset
+      _target_: src.dataset.audio_to_text.AudioToCharDataset
       manifest_filepath: ${validation_datasets}
       max_duration: 11
       min_duration: 0.1
@@ -48,6 +58,7 @@ model:
       normalize: true
       sample_rate: ${sample_rate}
       trim: false
+      return_speaker_id: true
       # bos_id: 66
       # eos_id: 67
       # pad_id: 68  These parameters are added automatically in Tacotron2
