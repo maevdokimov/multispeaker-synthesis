@@ -1,3 +1,4 @@
+import pickle
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -11,11 +12,13 @@ from nemo.core.classes.common import typecheck
 from nemo.core.neural_types.elements import (
     AudioSignal,
     EmbeddedTextType,
+    EncodedRepresentation,
     LengthsType,
     LogitsType,
     MelSpectrogramType,
     NormalDistributionLogVarianceType,
     NormalDistributionMeanType,
+    NormalDistributionSamplesType,
     SequenceToSequenceAlignmentType,
 )
 from nemo.core.neural_types.neural_type import NeuralType
@@ -81,12 +84,36 @@ class Tacotron2Model(SpectrogramGenerator):
 
         self.calculate_loss = True
         self.calculate_guided_loss = False
+        self.calculate_classification_loss = False
 
         self.loss = Tacotron2Loss()
         self.vae_loss = instantiate(self._cfg.vae_loss)
         if "guided_attention_loss" in self._cfg.keys():
             self.guided_attention_loss = instantiate(self._cfg.guided_attention_loss)
             self.calculate_guided_loss = True
+        if "classification_loss" in self._cfg.keys():
+            counts_filepath = self.register_artifact("counts_filepath", self._cfg.classification_loss.counts_filepath)
+            with open(counts_filepath, "rb") as f:
+                speaker_counts = pickle.load(f)
+            total_speakers = sum(speaker_counts.values())
+            weight = torch.tensor(
+                [speaker_counts[i] / total_speakers for i in range(self._cfg.classification_loss.num_speakers)]
+            )
+
+            self.classification_loss = nn.CrossEntropyLoss(weight=weight, reduction="sum")
+            self.calculate_classification_loss = True
+            self.classification_loss_scale = self._cfg.classification_loss.scale
+
+            if self._cfg.classification_loss.on_style:
+                self.classification_on_style = True
+                self.classification_layer = nn.Linear(
+                    self._cfg.reference_encoder.z_latent_dim, self._cfg.classification_loss.num_speakers
+                )
+            else:
+                self.classification_on_style = False
+                self.classification_layer = nn.Linear(
+                    self._cfg.reference_encoder.output_dim, self._cfg.classification_loss.num_speakers
+                )
 
     @property
     def parser(self):
@@ -180,6 +207,8 @@ class Tacotron2Model(SpectrogramGenerator):
             "alignments": NeuralType(("B", "T", "T"), SequenceToSequenceAlignmentType()),
             "mu": NeuralType(("B", "D"), NormalDistributionMeanType()),
             "logvar": NeuralType(("B", "D"), NormalDistributionLogVarianceType()),
+            "vae_sample": NeuralType(("B", "D"), NormalDistributionSamplesType()),
+            "reference_embedding": NeuralType(("B", "D"), EncodedRepresentation()),
         }
 
     @typecheck()
@@ -192,16 +221,18 @@ class Tacotron2Model(SpectrogramGenerator):
 
         token_embedding = self.text_embedding(tokens).transpose(1, 2)
         encoder_embedding = self.encoder(token_embedding=token_embedding, token_len=token_len)
-        reference_embedding, mu, logvar, _ = self.reference_encoder(ref_spec=ref_spec)
-        reference_embedding = reference_embedding.unsqueeze(1).expand_as(encoder_embedding)
+        reference_embedding, mu, logvar, vae_sample = self.reference_encoder(ref_spec=ref_spec)
+        reference_embedding_expanded = reference_embedding.unsqueeze(1).expand_as(encoder_embedding)
 
         if self.training:
             spec_pred_dec, gate_pred, alignments = self.decoder(
-                memory=encoder_embedding + reference_embedding, decoder_inputs=spec_target, memory_lengths=token_len
+                memory=encoder_embedding + reference_embedding_expanded,
+                decoder_inputs=spec_target,
+                memory_lengths=token_len,
             )
         else:
             spec_pred_dec, gate_pred, alignments, pred_length = self.decoder(
-                memory=encoder_embedding + reference_embedding, memory_lengths=token_len
+                memory=encoder_embedding + reference_embedding_expanded, memory_lengths=token_len
             )
         spec_pred_postnet = self.postnet(mel_spec=spec_pred_dec)
 
@@ -218,6 +249,8 @@ class Tacotron2Model(SpectrogramGenerator):
             alignments,
             mu,
             logvar,
+            vae_sample,
+            reference_embedding,
         )
 
     @typecheck(
@@ -245,7 +278,7 @@ class Tacotron2Model(SpectrogramGenerator):
         return spectrogram_pred
 
     def training_step(self, batch, batch_idx):
-        audio, audio_len, tokens, token_len = batch
+        audio, audio_len, tokens, token_len, speaker_idx = batch
         (
             spec_pred_dec,
             spec_pred_postnet,
@@ -257,9 +290,11 @@ class Tacotron2Model(SpectrogramGenerator):
             alignments,
             mu,
             logvar,
+            vae_sample,
+            reference_embedding,
         ) = self.forward(audio=audio, audio_len=audio_len, tokens=tokens, token_len=token_len)
 
-        tacotron_loss, _ = self.loss(
+        loss, _ = self.loss(
             spec_pred_dec=spec_pred_dec,
             spec_pred_postnet=spec_pred_postnet,
             gate_pred=gate_pred,
@@ -267,10 +302,13 @@ class Tacotron2Model(SpectrogramGenerator):
             spec_target_len=spec_target_len,
             pad_value=self.pad_value,
         )
+        self.log(name="tacotron_loss", value=loss.clone().detach())
 
         _kl_loss = self.vae_loss(mu=mu, logvar=logvar)
         kl_weight = self.vae_loss.kl_anneal_function(self.global_step)
         kl_loss = kl_weight * _kl_loss
+        self.log(name="kl_loss", value=kl_loss.clone().detach())
+        loss += kl_loss
 
         if self.calculate_guided_loss:
             guided_loss = self.guided_attention_loss(
@@ -278,30 +316,22 @@ class Tacotron2Model(SpectrogramGenerator):
                 spec_target_len=spec_target_len,
                 encoder_target_len=token_len,
             )
-            loss = tacotron_loss + guided_loss + kl_loss
-            log = {
-                "loss": loss,
-                "kl_loss": kl_loss,
-                "tacotron_loss": tacotron_loss,
-                "guided_loss": guided_loss,
-                "kl_weight": kl_weight,
-            }
-        else:
-            loss = tacotron_loss + kl_loss
-            log = {"loss": loss, "tacotron_loss": tacotron_loss, "kl_loss": kl_loss, "kl_weight": kl_weight}
+            self.log(name="guided_loss", value=guided_loss.clone().detach())
+            loss += guided_loss
+        if self.calculate_classification_loss:
+            if self.classification_on_style:
+                classification_logits = self.classification_layer(vae_sample)
+            else:
+                classification_logits = self.classification_layer(reference_embedding)
+            classification_loss = self.classification_loss(classification_logits, speaker_idx.long())
+            classification_loss *= self.classification_loss_scale / audio.shape[0]
+            self.log(name="classification_loss", value=classification_loss.clone().detach())
+            loss += classification_loss
 
-        output = {
-            "loss": loss,
-            "progress_bar": {"training_loss": loss},
-            "log": log,
-        }
-
-        return output
+        return {"loss": loss}
 
     def validation_step(self, batch, batch_idx):
-        audio, audio_len, tokens, token_len = batch
-        # spec_pred_dec, spec_pred_postnet, gate_pred, spec_target, spec_target_len, alignments = self.forward(
-        # spec_pred_dec, spec_pred_postnet, gate_pred, spec_target, spec_target_len, _, _, alignments, _, _ = self.forward(
+        audio, audio_len, tokens, token_len, _ = batch
         (
             spec_pred_dec,
             spec_pred_postnet,
@@ -311,6 +341,8 @@ class Tacotron2Model(SpectrogramGenerator):
             _,
             _,
             alignments,
+            _,
+            _,
             _,
             _,
         ) = self.forward(audio=audio, audio_len=audio_len, tokens=tokens, token_len=token_len)
