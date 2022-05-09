@@ -10,6 +10,7 @@ n_stride: 256
 pad_value: -11.52
 train_dataset: ???
 validation_datasets: ???
+num_speakers: ???
 
 log_val_sample_idx: null
 
@@ -23,7 +24,7 @@ model:
     scale: 1.0
 
   classification_loss:
-    num_speakers: 109
+    num_speakers: ${num_speakers}
     scale: 1.
     counts_filepath: ???
     on_style: True
@@ -45,7 +46,7 @@ model:
     dataloader_params:
       drop_last: false
       shuffle: true
-      batch_size: 26
+      batch_size: 32
       num_workers: 4
 
   validation_ds:
@@ -65,7 +66,7 @@ model:
     dataloader_params:
       drop_last: false
       shuffle: false
-      batch_size: 26
+      batch_size: 32
       num_workers: 4
 
   preprocessor:
@@ -155,7 +156,7 @@ model:
 
 trainer:
   gpus: 1 # number of gpus
-  max_epochs: ???
+  max_steps: ???
   num_nodes: 1
   accelerator: ddp
   accumulate_grad_batches: 1

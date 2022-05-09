@@ -10,6 +10,7 @@ n_stride: 512
 pad_value: -11.52
 train_dataset: ???
 validation_datasets: ???
+num_speakers: ???
 pretrained_table_path: null
 
 log_val_sample_idx: null
@@ -23,7 +24,7 @@ model:
       # _target_: "nemo.collections.asr.data.audio_to_text.AudioToCharDataset"
       _target_: src.dataset.audio_to_text.AudioToCharDataset
       manifest_filepath: ${train_dataset}
-      max_duration: 17
+      max_duration: 11
       min_duration: 0.1
       trim: false
       int_values: false
@@ -36,16 +37,15 @@ model:
     dataloader_params:
       drop_last: false
       shuffle: true
-      batch_size: 26
-      num_workers: 8
-
+      batch_size: 32
+      num_workers: 4
 
   validation_ds:
     dataset:
       # _target_: "nemo.collections.asr.data.audio_to_text.AudioToCharDataset"
       _target_: src.dataset.audio_to_text.AudioToCharDataset
       manifest_filepath: ${validation_datasets}
-      max_duration: 17
+      max_duration: 11
       min_duration: 0.1
       int_values: false
       normalize: true
@@ -58,8 +58,8 @@ model:
     dataloader_params:
       drop_last: false
       shuffle: false
-      batch_size: 26
-      num_workers: 8
+      batch_size: 32
+      num_workers: 4
 
   preprocessor:
     _target_: nemo.collections.asr.parts.preprocessing.features.FilterbankFeatures
@@ -93,7 +93,7 @@ model:
     decoder_rnn_dim: 1024
     encoder_embedding_dim: ${model.encoder.encoder_embedding_dim}
     gate_threshold: 0.5
-    max_decoder_steps: 1500
+    max_decoder_steps: 1000
     n_frames_per_step: 1  # currently only 1 is supported
     n_mel_channels: ${n_mels}
     p_attention_dropout: 0.1
@@ -110,7 +110,7 @@ model:
     # Speaker embeds
     speaker_embed_dim: 256
     pretrained_table_path: ${pretrained_table_path}
-    num_speakers: 10
+    num_speakers: ${num_speakers}
 
   postnet:
     _target_: nemo.collections.tts.modules.tacotron2.Postnet
@@ -133,7 +133,7 @@ model:
 
 trainer:
   gpus: 1 # number of gpus
-  max_epochs: ???
+  max_steps: ???
   num_nodes: 1
   accelerator: ddp
   accumulate_grad_batches: 1
