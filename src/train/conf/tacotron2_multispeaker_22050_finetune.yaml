@@ -11,6 +11,8 @@ pad_value: -11.52
 train_dataset: ???
 validation_datasets: ???
 num_speakers: ???
+checkpoint_path: null
+pretrained_table_path: null
 
 log_val_sample_idx: null
 
@@ -18,19 +20,9 @@ model:
   labels: ${labels}
   log_val_sample_idx: ${log_val_sample_idx}
 
-  guided_attention_loss:
-    _target_: src.losses.guided_attention_loss.GuidedAttentionLoss
-    g: 0.2
-    scale: 1.0
-
-  classification_loss:
-    num_speakers: ${num_speakers}
-    scale: 1.
-    counts_filepath: ???
-    on_style: True
-
   train_ds:
     dataset:
+      # _target_: "nemo.collections.asr.data.audio_to_text.AudioToCharDataset"
       _target_: src.dataset.audio_to_text.AudioToCharDataset
       manifest_filepath: ${train_dataset}
       max_duration: 11
@@ -40,6 +32,8 @@ model:
       normalize: true
       sample_rate: ${sample_rate}
       return_speaker_id: true
+      target_speakers: [108]
+      finetune_data_percentage: 0.1
       # bos_id: 66
       # eos_id: 67
       # pad_id: 68  These parameters are added automatically in Tacotron2
@@ -51,6 +45,7 @@ model:
 
   validation_ds:
     dataset:
+      # _target_: "nemo.collections.asr.data.audio_to_text.AudioToCharDataset"
       _target_: src.dataset.audio_to_text.AudioToCharDataset
       manifest_filepath: ${validation_datasets}
       max_duration: 11
@@ -90,25 +85,6 @@ model:
     sample_rate: ${sample_rate}
     window: hann
 
-  vae_loss:
-    _target_: src.losses.tacotron2_vae_loss.Tacotron2VAELoss
-    anneal_function: "logistic"
-    anneal_k: 0.0025
-    anneal_x0: 10000
-    anneal_upper: 0.2
-    anneal_lag: 50000
-
-  reference_encoder:
-    _target_: src.modules.vae_gst.ReferenceEncoder
-    ref_enc_filters: [32, 32, 64, 64, 128, 128]
-    output_dim: 512
-    n_mels: ${n_mels}
-    kernel_size: 3
-    stride: 2
-    padding: 1
-    z_latent_dim: 32
-    ref_enc_gru_size: 256
-
   encoder:
     _target_: nemo.collections.tts.modules.tacotron2.Encoder
     encoder_kernel_size: 5
@@ -116,7 +92,7 @@ model:
     encoder_embedding_dim: 512
 
   decoder:
-    _target_: nemo.collections.tts.modules.tacotron2.Decoder
+    _target_: src.modules.tacotron2_multispeaker.Decoder
     decoder_rnn_dim: 1024
     encoder_embedding_dim: ${model.encoder.encoder_embedding_dim}
     gate_threshold: 0.5
@@ -134,6 +110,10 @@ model:
     attention_location_kernel_size: 31
     attention_location_n_filters: 32
     early_stopping: true
+    # Speaker embeds
+    speaker_embed_dim: 256
+    pretrained_table_path: ${pretrained_table_path}
+    num_speakers: ${num_speakers}
 
   postnet:
     _target_: nemo.collections.tts.modules.tacotron2.Postnet
