@@ -1,3 +1,4 @@
+import random
 from typing import Callable, Dict, List, Optional, Union
 
 import torch
@@ -5,6 +6,7 @@ from nemo.collections.asr.parts.preprocessing.features import WaveformFeaturizer
 from nemo.collections.common.parts.preprocessing import collections, parsers
 from nemo.core.classes import Dataset
 from nemo.core.neural_types import *
+from nemo.utils import logging
 
 __all__ = [
     "AudioToCharDataset",
@@ -176,6 +178,10 @@ class _AudioTextDataset(Dataset):
         bos_id: Id of beginning of sequence symbol to append if not None
         eos_id: Id of end of sequence symbol to append if not None
         return_sample_id (bool): whether to return the sample_id as a part of each sample
+        return_speaker_id (bool): whether to return the speaker_id as a part of each sample
+        target_speakers: list of speakers, for which we want to use full dataset
+        finetune_data_percentage: percent of samples of non-target speakers to mix with data of
+            target speakers
     """
 
     @property
@@ -206,6 +212,8 @@ class _AudioTextDataset(Dataset):
         pad_id: int = 0,
         return_sample_id: bool = False,
         return_speaker_id: bool = False,
+        target_speakers: List[int] = None,
+        finetune_data_percentage: float = None,
     ):
         self.manifest_processor = ASRManifestProcessor(
             manifest_filepath=manifest_filepath,
@@ -222,10 +230,37 @@ class _AudioTextDataset(Dataset):
         self.return_sample_id = return_sample_id
         self.return_speaker_id = return_speaker_id
 
+        self.target_speakers = target_speakers
+        self.finetune_data_percentage = finetune_data_percentage
+        self.samples_finetune = self.finetune_data_percentage is not None
+        if self.samples_finetune:
+            self.target_idx, self.non_target_idx = [], []
+            for i, sample in enumerate(self.manifest_processor.collection):
+                if sample.speaker in target_speakers:
+                    self.target_idx.append(i)
+                else:
+                    self.non_target_idx.append(i)
+
+            self.dataset_size = int(len(self.target_idx) + finetune_data_percentage * len(self.non_target_idx))
+            logging.info(
+                f"Number of target samples: {len(self.target_idx)}; "
+                f"Number of non-target samples: {len(self.non_target_idx)}; "
+                f"Resultig dataset size: {self.dataset_size}"
+            )
+
     def get_manifest_sample(self, sample_id):
         return self.manifest_processor.collection[sample_id]
 
     def __getitem__(self, index):
+        if not self.samples_finetune:
+            return self.base_getitem(index)
+
+        if index < len(self.target_idx):
+            return self.base_getitem(self.target_idx[index])
+        else:
+            return self.base_getitem(random.choice(self.non_target_idx))
+
+    def base_getitem(self, index):
         sample = self.manifest_processor.collection[index]
         offset = sample.offset
 
@@ -251,7 +286,10 @@ class _AudioTextDataset(Dataset):
         return output
 
     def __len__(self):
-        return len(self.manifest_processor.collection)
+        if not self.samples_finetune:
+            return len(self.manifest_processor.collection)
+        else:
+            return self.dataset_size
 
     def _collate_fn(self, batch):
         return _speech_collate_fn(batch, pad_id=self.manifest_processor.pad_id, has_speaker_id=self.return_speaker_id)
@@ -319,6 +357,8 @@ class AudioToCharDataset(_AudioTextDataset):
         parser: Union[str, Callable] = "en",
         return_sample_id: bool = False,
         return_speaker_id: bool = False,
+        target_speakers: List[int] = None,
+        finetune_data_percentage: float = None,
     ):
         self.labels = labels
 
@@ -341,4 +381,6 @@ class AudioToCharDataset(_AudioTextDataset):
             pad_id=pad_id,
             return_sample_id=return_sample_id,
             return_speaker_id=return_speaker_id,
+            target_speakers=target_speakers,
+            finetune_data_percentage=finetune_data_percentage,
         )
