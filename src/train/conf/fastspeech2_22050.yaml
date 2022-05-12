@@ -123,12 +123,12 @@ model:
   optim:
     name: adam
     betas: [0.9,0.98]
-    lr: 1e-3
+    lr: 1
     weight_decay: 1e-6
     # scheduler setup
     sched:
       name: NoamAnnealing
-      warmup_steps: 4000
+      warmup_steps: 8000
       min_lr: 1e-5
       d_model: ${model.d_model}
 
