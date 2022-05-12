@@ -107,11 +107,7 @@ class FastSpeech2Model(SpectrogramGenerator):
         return mel, log_dur_preds, pitch_preds, energy_preds, encoded_text_mask, predicted_spec_len
 
     def training_step(self, batch, batch_idx):
-        if self.speaker:
-            f, fl, t, tl, durations, pitch, energies, speaker_id = batch
-        else:
-            f, fl, t, tl, durations, pitch, energies = batch
-            speaker_id = None
+        f, fl, t, tl, durations, pitch, energies, speaker_id = batch
         spec, spec_len = self.audio_to_melspec_preprocessor(f, fl)
         mel, log_dur_preds, pitch_preds, energy_preds, encoded_text_mask, predicted_spec_len = self(
             text=t,
@@ -175,11 +171,7 @@ class FastSpeech2Model(SpectrogramGenerator):
             self.log_train_images = False
 
     def validation_step(self, batch, batch_idx):
-        if self.speaker:
-            f, fl, t, tl, _, _, _, spk = batch
-        else:
-            f, fl, t, tl, _, _, _ = batch
-            spk = None
+        f, fl, t, tl, _, _, _, spk = batch
         spec, spec_len = self.audio_to_melspec_preprocessor(f, fl)
         mel, _, _, _, _, predicted_spec_len = self(text=t, text_length=tl, spec_len=spec_len, speaker=spk)
         loss = self.loss(
