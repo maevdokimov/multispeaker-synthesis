@@ -125,13 +125,15 @@ model:
 
   optim:
     name: adam
-    lr: 1e-3
+    lr: 1
     weight_decay: 1e-6
 
     # scheduler setup
     sched:
-      name: CosineAnnealing
-      min_lr: 1e-5
+      name: NoamAnnealing
+      warmup_steps: 16000
+      min_lr: 1.0e-05
+      d_model: 256
 
 
 trainer:
